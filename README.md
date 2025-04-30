@@ -28,8 +28,8 @@ Hệ thống sử dụng các dữ liệu sau:
 - `spotify_features_data_2023.csv`: Đặc tính âm thanh của bài hát
 - `spotify_tracks_data_2023.csv`: Thông tin cơ bản về bài hát
 - `spotify-albums_data_2023.csv`: Thông tin về album
-- Tải với link sau: 
-Lưu ý: Tải các file vào thư mục "data"
+- Tải với link sau: https://drive.google.com/drive/folders/19qkrXj-ApvY9lr_ep5_dZoDx5zHQuZf_?usp=sharing
+- Lưu ý: Tải các file vào thư mục "data"
 
 ## Cài đặt
 
