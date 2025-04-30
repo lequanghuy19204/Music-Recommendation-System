@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Đăng nhập Spotify</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='style.css') }}"
+    />
+  </head>
+  <body>
+    <div class="container">
+      <h1>Chào mừng đến với Trình phát nhạc Spotify</h1>
+      <a href="{{ auth_url }}" class="login-btn">Đăng nhập với Spotify</a>
+    </div>
+  </body>
+</html>

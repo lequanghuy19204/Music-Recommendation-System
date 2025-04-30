@@ -1,0 +1,10 @@
+flask
+spotipy
+python-dotenv
+pandas
+numpy
+scikit-learn
+tensorflow
+opencv-python
+deepface
+tf-keras
