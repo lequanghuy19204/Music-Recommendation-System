@@ -534,3 +534,46 @@ h1, h2, h3 {
     width: 100%;
   }
 }
+
+/* Thêm vào cuối file style.css */
+.progress-container {
+  width: 100%;
+  background-color: #f0f0f0;
+  border-radius: 10px;
+  margin: 10px 0;
+  height: 8px;
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background-color: #1DB954;
+  border-radius: 10px;
+  width: 0%;
+  transition: width 0.5s;
+}
+
+.time-display {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #777;
+  margin-top: 5px;
+}
+
+.time-elapsed, .time-total {
+  font-weight: bold;
+}
+
+/* Thêm style cho bài hát đang phát */
+.track-item.playing {
+  border-left: 4px solid #1DB954;
+  background-color: rgba(29, 185, 84, 0.1);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.track-item.playing:hover {
+  background-color: rgba(29, 185, 84, 0.15);
+}

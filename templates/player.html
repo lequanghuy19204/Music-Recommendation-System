@@ -38,7 +38,16 @@
         window.spotifyPlayer = player;
       };
 
-      // Cập nhật thông tin bài hát đang phát
+      // Thêm biến để theo dõi thời gian
+      let trackDuration = 0;
+      let trackPosition = 0;
+      let progressInterval = null;
+
+      // Thêm biến để lưu trữ danh sách bài hát gợi ý hiện tại
+      let currentRecommendationTracks = [];
+      let currentTrackIndex = -1;
+
+      // Cập nhật hàm updateCurrentlyPlaying
       function updateCurrentlyPlaying(state) {
         if (!state.track_window.current_track) return;
         
@@ -50,7 +59,110 @@
             <p>${track.artists[0].name}</p>
           </div>
         `;
+        
+        // Cập nhật thời gian bài hát
+        trackDuration = state.duration;
+        trackPosition = state.position;
+        
+        // Hiển thị tổng thời gian bài hát
+        document.getElementById('time-total').textContent = formatTime(trackDuration);
+        
+        // Bắt đầu cập nhật thanh tiến trình
+        startProgressUpdate();
+        
+        // Tìm bài hát đang phát trong danh sách gợi ý để highlight
+        if (currentRecommendationTracks.length > 0) {
+          const currentUri = track.uri;
+          const index = currentRecommendationTracks.findIndex(t => t.uri === currentUri);
+          if (index !== -1) {
+            currentTrackIndex = index;
+            highlightPlayingTrack();
+          }
+        }
       }
+
+      // Hàm định dạng thời gian từ milliseconds thành MM:SS
+      function formatTime(timeMs) {
+        if (!timeMs) return '0:00';
+        const totalSeconds = Math.floor(timeMs / 1000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+      }
+
+      // Hàm bắt đầu cập nhật thanh tiến trình
+      function startProgressUpdate() {
+        // Xóa interval cũ nếu có
+        if (progressInterval) {
+          clearInterval(progressInterval);
+        }
+        
+        // Cập nhật ban đầu
+        updateProgress();
+        
+        // Cập nhật tiến trình mỗi 1 giây
+        progressInterval = setInterval(() => {
+          // Chỉ cập nhật nếu đang phát
+          if (!window.spotifyPlayer) return;
+          
+          window.spotifyPlayer.getCurrentState().then(state => {
+            if (state) {
+              trackPosition = state.position;
+              updateProgress();
+            }
+          });
+        }, 1000);
+      }
+
+      // Hàm cập nhật thanh tiến trình
+      function updateProgress() {
+        if (trackDuration > 0) {
+          const progressPercent = (trackPosition / trackDuration) * 100;
+          document.getElementById('progress-bar').style.width = `${progressPercent}%`;
+          document.getElementById('time-elapsed').textContent = formatTime(trackPosition);
+        }
+      }
+
+      // Thêm sự kiện click vào thanh tiến trình để nhảy đến vị trí
+      document.addEventListener('DOMContentLoaded', function() {
+        const progressContainer = document.querySelector('.progress-container');
+        if (progressContainer) {
+          progressContainer.addEventListener('click', function(e) {
+            if (!window.spotifyPlayer || !trackDuration) return;
+            
+            // Tính toán vị trí cần nhảy đến
+            const clickPosition = e.offsetX / this.offsetWidth;
+            const positionMs = Math.floor(trackDuration * clickPosition);
+            
+            // Seek đến vị trí mới
+            window.spotifyPlayer.seek(positionMs);
+          });
+        }
+        
+        // Đăng ký sự kiện khi bài hát kết thúc
+        player.addListener('player_state_changed', state => {
+          console.log('Player state changed:', state);
+          if (state) {
+            updateCurrentlyPlaying(state);
+            // Kiểm tra xem bài hát đã kết thúc chưa
+            if (state.paused && state.position === 0) {
+              // Bài hát đã kết thúc hoặc đã dừng
+              clearInterval(progressInterval);
+            }
+          }
+        });
+      });
+
+      // Bổ sung xử lý khi chuyển tab hoặc đóng trang
+      document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'hidden') {
+          // Tạm dừng cập nhật khi tab không hiển thị
+          clearInterval(progressInterval);
+        } else {
+          // Khôi phục cập nhật khi tab được hiển thị lại
+          startProgressUpdate();
+        }
+      });
 
       // Hàm phát nhạc
       function playTrack(uri) {
@@ -296,14 +408,24 @@
         
         if (!recommendations || recommendations.length === 0) {
           container.innerHTML = '<p>Không tìm thấy gợi ý phù hợp.</p>';
+          currentRecommendationTracks = [];
+          currentTrackIndex = -1;
           return;
         }
         
+        // Lưu lại danh sách bài hát gợi ý hiện tại
+        currentRecommendationTracks = recommendations;
+        currentTrackIndex = -1;
+        
         // Hiển thị từng bài hát được gợi ý
-        recommendations.forEach(track => {
+        recommendations.forEach((track, index) => {
           const trackElement = document.createElement('div');
           trackElement.className = 'track-item';
-          trackElement.onclick = () => playTrack(track.uri);
+          trackElement.dataset.index = index; // Lưu index vào phần tử
+          trackElement.onclick = () => {
+            playTrack(track.uri);
+            currentTrackIndex = index; // Cập nhật index bài hát đang phát
+          };
           
           trackElement.innerHTML = `
             <img src="${track.image || '/static/default-album.jpg'}" alt="Album art">
@@ -588,11 +710,22 @@
           return;
         }
         
-        // Hiển thị từng bài hát được gợi ý
-        recommendations.forEach(track => {
+        // Lưu index hiện tại
+        const startIndex = currentRecommendationTracks.length;
+        
+        // Cập nhật danh sách bài hát gợi ý
+        currentRecommendationTracks = [...currentRecommendationTracks, ...recommendations];
+        
+        // Hiển thị từng bài hát mới được gợi ý
+        recommendations.forEach((track, i) => {
+          const index = startIndex + i;
           const trackElement = document.createElement('div');
           trackElement.className = 'track-item';
-          trackElement.onclick = () => playTrack(track.uri);
+          trackElement.dataset.index = index; // Lưu index vào phần tử
+          trackElement.onclick = () => {
+            playTrack(track.uri);
+            currentTrackIndex = index; // Cập nhật index bài hát đang phát
+          };
           
           trackElement.innerHTML = `
             <img src="${track.image || '/static/default-album.jpg'}" alt="Album art">
@@ -606,6 +739,72 @@
         });
         
         document.getElementById('recommendation-status').textContent = 'Đã tải thêm gợi ý mới';
+      }
+
+      // Thêm hàm để phát bài hát trước đó trong danh sách gợi ý
+      function playPreviousRecommendation() {
+        if (currentRecommendationTracks.length === 0) {
+          console.log("Không có bài hát nào trong danh sách gợi ý");
+          return;
+        }
+        
+        // Nếu chưa phát bài hát nào, phát bài hát đầu tiên
+        if (currentTrackIndex === -1) {
+          currentTrackIndex = 0;
+        } else {
+          // Giảm index và đảm bảo không âm
+          currentTrackIndex = (currentTrackIndex - 1 + currentRecommendationTracks.length) % currentRecommendationTracks.length;
+        }
+        
+        // Phát bài hát tại index mới
+        const track = currentRecommendationTracks[currentTrackIndex];
+        playTrack(track.uri);
+        
+        // Highlight bài hát đang phát
+        highlightPlayingTrack();
+      }
+
+      // Thêm hàm để phát bài hát tiếp theo trong danh sách gợi ý
+      function playNextRecommendation() {
+        if (currentRecommendationTracks.length === 0) {
+          console.log("Không có bài hát nào trong danh sách gợi ý");
+          return;
+        }
+        
+        // Nếu chưa phát bài hát nào, phát bài hát đầu tiên
+        if (currentTrackIndex === -1) {
+          currentTrackIndex = 0;
+        } else {
+          // Tăng index và đảm bảo không vượt quá độ dài mảng
+          currentTrackIndex = (currentTrackIndex + 1) % currentRecommendationTracks.length;
+        }
+        
+        // Phát bài hát tại index mới
+        const track = currentRecommendationTracks[currentTrackIndex];
+        playTrack(track.uri);
+        
+        // Highlight bài hát đang phát
+        highlightPlayingTrack();
+      }
+
+      // Hàm đánh dấu bài hát đang phát
+      function highlightPlayingTrack() {
+        if (currentTrackIndex === -1) return;
+        
+        // Loại bỏ highlight từ tất cả các bài hát
+        const allTracks = document.querySelectorAll('#recommendations-container .track-item');
+        allTracks.forEach(track => {
+          track.classList.remove('playing');
+        });
+        
+        // Thêm highlight cho bài hát đang phát
+        const currentTrack = document.querySelector(`#recommendations-container .track-item[data-index="${currentTrackIndex}"]`);
+        if (currentTrack) {
+          currentTrack.classList.add('playing');
+          
+          // Cuộn đến bài hát đang phát
+          currentTrack.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
       }
 
       // Bắt đầu với tab gợi ý thủ công khi trang được tải
@@ -642,10 +841,19 @@
             <div id="now-playing-info">
               <p>Chưa có bài hát nào đang phát</p>
             </div>
+            <div class="playback-progress">
+              <div class="progress-container">
+                <div id="progress-bar" class="progress-bar"></div>
+              </div>
+              <div class="time-display">
+                <span id="time-elapsed" class="time-elapsed">0:00</span>
+                <span id="time-total" class="time-total">0:00</span>
+              </div>
+            </div>
             <div id="player-controls">
-              <button onclick="window.spotifyPlayer.previousTrack()">Trước</button>
+              <button onclick="playPreviousRecommendation()">Trước</button>
               <button onclick="window.spotifyPlayer.togglePlay()">Phát/Dừng</button>
-              <button onclick="window.spotifyPlayer.nextTrack()">Tiếp</button>
+              <button onclick="playNextRecommendation()">Tiếp</button>
             </div>
           </div>
           
