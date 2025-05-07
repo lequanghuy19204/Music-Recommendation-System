@@ -168,16 +168,16 @@ class MusicRecommender:
         
         return recommended_tracks
     
-    def recommend_by_track_id(self, track_id, n=5):
+    def recommend_by_track_id(self, track_id, n=5, offset=0):
         """Recommend songs similar to the given track ID using KNN model"""
         if self.knn_model is None or self.track_indices is None:
             print("Mô hình KNN không có sẵn, trả về gợi ý ngẫu nhiên")
-            return self.recommend_random(n)
+            return self.recommend_random(n, offset)
         
         # Check if track_id exists in our data
         if track_id not in self.track_indices:
             print(f"Không tìm thấy ID bài hát {track_id} trong tập dữ liệu")
-            return self.recommend_random(n)
+            return self.recommend_random(n, offset)
         
         # Get the track index
         idx = self.track_indices[track_id]
@@ -185,21 +185,21 @@ class MusicRecommender:
         # Get nearest neighbors
         distances, indices = self.knn_model.kneighbors(
             self.feature_vectors[idx].reshape(1, -1),
-            n_neighbors=n+1  # +1 because the first one will be the input track itself
+            n_neighbors=n+offset+1  # +1 because the first one will be the input track itself
         )
         
-        # Skip the first result (the track itself)
-        similar_indices = indices.flatten()[1:n+1]
+        # Skip the first result (the track itself) and apply offset
+        similar_indices = indices.flatten()[1+offset:1+offset+n]
         
         # Get the track IDs
         recommended_track_ids = [self.track_ids[i] for i in similar_indices]
         
         return recommended_track_ids
     
-    def recommend_by_genre(self, genre, n=5):
+    def recommend_by_genre(self, genre, n=5, offset=0):
         """Recommend songs from a specific genre"""
         if self.artists_data is None or len(self.artists_data) == 0:
-            return self.recommend_random(n)
+            return self.recommend_random(n, offset)
         
         # Find artists in the given genre
         genre_artists = self.artists_data[
@@ -212,7 +212,7 @@ class MusicRecommender:
         
         if len(genre_artists) == 0:
             print(f"Không tìm thấy nghệ sĩ nào cho thể loại {genre}")
-            return self.recommend_random(n)
+            return self.recommend_random(n, offset)
         
         # Get artist IDs
         artist_ids = genre_artists['id'].tolist()
@@ -223,11 +223,10 @@ class MusicRecommender:
             recommended_tracks = self.full_data[self.full_data['artist_id'].isin(artist_ids)]
         else:
             # Otherwise, use a random selection of artists (simplified approach)
-            # In a real app, you'd need to properly link artists to tracks
-            recommended_tracks = self.tracks_data.sample(min(n, len(self.tracks_data)))
+            recommended_tracks = self.tracks_data.sample(min(n+offset, len(self.tracks_data)))
         
-        # Get track IDs (up to n)
-        recommended_track_ids = recommended_tracks['id'].tolist()[:n]
+        # Get track IDs (with offset)
+        recommended_track_ids = recommended_tracks['id'].tolist()[offset:offset+n]
         
         # If we don't have enough recommendations, add some random ones
         if len(recommended_track_ids) < n:
@@ -236,7 +235,7 @@ class MusicRecommender:
         
         return recommended_track_ids
     
-    def recommend_by_features(self, feature_preferences, n=5):
+    def recommend_by_features(self, feature_preferences, n=5, offset=0):
         """Recommend songs based on audio feature preferences"""
         # Nếu không có mô hình, trả về ngẫu nhiên
         if self.feature_vectors is None or self.knn_model is None:
@@ -260,10 +259,11 @@ class MusicRecommender:
             # Sử dụng mô hình đơn giản hơn với đặc trưng sẵn có
             print(f"Sử dụng gợi ý dựa trên {len(user_features)} đặc trưng")
             
-            # Lựa chọn 5 bài hát ngẫu nhiên có các đặc tính gần với sở thích
-            sample_size = min(20, len(self.tracks_data))
+            # Lựa chọn bài hát có các đặc tính gần với sở thích, với offset để lấy các bài tiếp theo
+            sample_size = min(20 + offset, len(self.tracks_data))
             if sample_size > 0:
-                return self.tracks_data.sample(min(n, sample_size))['id'].tolist()
+                # Lấy các bài hát từ vị trí offset
+                return self.tracks_data.sample(sample_size)['id'].tolist()[offset:offset+n]
             else:
                 return self.recommend_random(n)
             
@@ -271,12 +271,13 @@ class MusicRecommender:
             print(f"Lỗi khi gợi ý theo đặc tính: {e}")
             return self.recommend_random(n)
     
-    def recommend_random(self, n=5):
+    def recommend_random(self, n=5, offset=0):
         """Recommend random tracks"""
         if self.tracks_data is not None and len(self.tracks_data) > 0:
-            # Sample random tracks
-            sample = self.tracks_data.sample(min(n, len(self.tracks_data)))
-            return sample['id'].tolist()
+            # Sample random tracks with offset
+            sample_size = min(n+offset, len(self.tracks_data))
+            if sample_size > 0:
+                return self.tracks_data.sample(sample_size)['id'].tolist()[offset:offset+n]
         
         # Fallback if no tracks data is available
         return []
@@ -340,3 +341,59 @@ def get_available_genres(data_dir='data'):
     except Exception as e:
         print(f"Lỗi khi lấy thể loại: {e}")
         return []
+
+def map_emotion_to_features(emotion):
+    """
+    Ánh xạ một cảm xúc sang các đặc tính âm nhạc phù hợp
+    Dựa trên nghiên cứu về tâm lý âm nhạc
+    """
+    # Các giá trị cơ bản dựa trên cảm xúc
+    base_values = {
+        'happy': {
+            'valence': 0.8,     # Cao - tích cực
+            'energy': 0.7,      # Trung bình-cao
+            'danceability': 0.7, # Cao
+            'tempo': 0.7,       # Nhanh
+            'acousticness': 0.3  # Thấp
+        },
+        'sad': {
+            'valence': 0.2,     # Thấp - tiêu cực
+            'energy': 0.3,      # Thấp
+            'danceability': 0.3, # Thấp
+            'tempo': 0.3,       # Chậm
+            'acousticness': 0.7  # Cao
+        },
+        'angry': {
+            'valence': 0.3,     # Thấp - tiêu cực
+            'energy': 0.9,      # Rất cao
+            'danceability': 0.5, # Trung bình
+            'tempo': 0.8,       # Nhanh
+            'acousticness': 0.2  # Rất thấp
+        }
+    }
+    
+    # Lấy giá trị cơ bản tương ứng với cảm xúc
+    features = base_values.get(emotion.lower(), base_values['happy'])  # Mặc định là happy nếu không tìm thấy
+    
+    # Bổ sung thêm các đặc trưng còn thiếu với giá trị mặc định
+    all_features = {
+        'valence': features.get('valence', 0.5),
+        'energy': features.get('energy', 0.5),
+        'danceability': features.get('danceability', 0.5),
+        'tempo': features.get('tempo', 0.5),
+        'acousticness': features.get('acousticness', 0.5),
+        'liveness': 0.5,
+        'speechiness': 0.5,
+        'instrumentalness': 0.5,
+        'key': 0.5,
+        'loudness': 0.5,
+        'mode': 0.5,
+        # Thêm các đặc trưng còn lại để đủ 16 đặc trưng
+        'time_signature': 0.5,
+        'duration_ms': 0.5,
+        'chorus_hit': 0.5,
+        'sections': 0.5,
+        'popularity': 0.5
+    }
+    
+    return all_features

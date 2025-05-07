@@ -72,9 +72,19 @@
         });
       }
 
-      // Hàm gợi ý bài hát dựa trên bài hát hiện tại
+      // Biến toàn cục để theo dõi loại gợi ý và offset
+      let currentRecommendationType = 'none';
+      let currentOffset = 0;
+      let currentParams = {}; // Lưu trữ các tham số hiện tại
+
+      // Hàm gợi ý dựa trên bài hát
       function recommendSimilarTracks(trackId) {
         document.getElementById('recommendation-status').textContent = 'Đang lấy gợi ý...';
+        
+        // Lưu thông tin gợi ý hiện tại
+        currentRecommendationType = 'track';
+        currentOffset = 0;
+        currentParams = { track_id: trackId };
         
         fetch("/recommend", {
           method: "POST",
@@ -91,16 +101,20 @@
         .then(data => {
           if (data.status === "success") {
             displayRecommendations(data.recommendations, 'Bài hát tương tự');
+            document.getElementById('load-more-btn').style.display = 'inline-block';
+            currentOffset = 5; // Cập nhật offset
           } else {
             document.getElementById('recommendation-status').textContent = 'Không thể lấy gợi ý bài hát.';
+            document.getElementById('load-more-btn').style.display = 'none';
           }
         })
         .catch(error => {
           document.getElementById('recommendation-status').textContent = 'Lỗi: ' + error.message;
+          document.getElementById('load-more-btn').style.display = 'none';
         });
       }
 
-      // Hàm gợi ý bài hát dựa trên thể loại
+      // Hàm gợi ý dựa trên thể loại
       function recommendByGenre() {
         const genreSelect = document.getElementById('genre-select');
         const selectedGenre = genreSelect.options[genreSelect.selectedIndex].value;
@@ -112,6 +126,11 @@
         
         document.getElementById('recommendation-status').textContent = 'Đang lấy gợi ý...';
         
+        // Lưu thông tin gợi ý hiện tại
+        currentRecommendationType = 'genre';
+        currentOffset = 0;
+        currentParams = { genre: selectedGenre };
+        
         fetch("/recommend", {
           method: "POST",
           headers: {
@@ -120,25 +139,35 @@
           body: JSON.stringify({
             type: "genre",
             genre: selectedGenre,
-            num_recommendations: 5
+            num_recommendations: 5,
+            offset: 0
           }),
         })
         .then(response => response.json())
         .then(data => {
           if (data.status === "success") {
             displayRecommendations(data.recommendations, 'Gợi ý từ thể loại: ' + selectedGenre);
+            document.getElementById('load-more-btn').style.display = 'inline-block';
+            currentOffset = 5; // Cập nhật offset
           } else {
             document.getElementById('recommendation-status').textContent = 'Không thể lấy gợi ý bài hát.';
+            document.getElementById('load-more-btn').style.display = 'none';
           }
         })
         .catch(error => {
           document.getElementById('recommendation-status').textContent = 'Lỗi: ' + error.message;
+          document.getElementById('load-more-btn').style.display = 'none';
         });
       }
 
       // Hàm gợi ý ngẫu nhiên
       function recommendRandom() {
         document.getElementById('recommendation-status').textContent = 'Đang lấy gợi ý...';
+        
+        // Lưu thông tin gợi ý hiện tại
+        currentRecommendationType = 'random';
+        currentOffset = 0;
+        currentParams = {};
         
         fetch("/recommend", {
           method: "POST",
@@ -147,19 +176,24 @@
           },
           body: JSON.stringify({
             type: "random",
-            num_recommendations: 5
+            num_recommendations: 5,
+            offset: 0
           }),
         })
         .then(response => response.json())
         .then(data => {
           if (data.status === "success") {
             displayRecommendations(data.recommendations, 'Gợi ý ngẫu nhiên');
+            document.getElementById('load-more-btn').style.display = 'inline-block';
+            currentOffset = 5; // Cập nhật offset
           } else {
             document.getElementById('recommendation-status').textContent = 'Không thể lấy gợi ý bài hát.';
+            document.getElementById('load-more-btn').style.display = 'none';
           }
         })
         .catch(error => {
           document.getElementById('recommendation-status').textContent = 'Lỗi: ' + error.message;
+          document.getElementById('load-more-btn').style.display = 'none';
         });
       }
 
@@ -172,6 +206,18 @@
         
         document.getElementById('recommendation-status').textContent = 'Đang lấy gợi ý...';
         
+        // Lưu thông tin gợi ý hiện tại
+        currentRecommendationType = 'features';
+        currentOffset = 0;
+        currentParams = {
+          features: {
+            danceability: danceability,
+            energy: energy,
+            acousticness: acousticness,
+            valence: valence
+          }
+        };
+        
         fetch("/recommend", {
           method: "POST",
           headers: {
@@ -179,31 +225,36 @@
           },
           body: JSON.stringify({
             type: "features",
-            features: {
-              danceability: danceability,
-              energy: energy,
-              acousticness: acousticness,
-              valence: valence
-            },
-            num_recommendations: 5
+            features: currentParams.features,
+            num_recommendations: 5,
+            offset: 0
           }),
         })
         .then(response => response.json())
         .then(data => {
           if (data.status === "success") {
             displayRecommendations(data.recommendations, 'Gợi ý dựa trên đặc tính âm nhạc');
+            document.getElementById('load-more-btn').style.display = 'inline-block';
+            currentOffset = 5; // Cập nhật offset
           } else {
             document.getElementById('recommendation-status').textContent = 'Không thể lấy gợi ý bài hát.';
+            document.getElementById('load-more-btn').style.display = 'none';
           }
         })
         .catch(error => {
           document.getElementById('recommendation-status').textContent = 'Lỗi: ' + error.message;
+          document.getElementById('load-more-btn').style.display = 'none';
         });
       }
 
       // Hàm gợi ý dựa trên cảm xúc từ camera
       function recommendByEmotion(emotion) {
         document.getElementById('recommendation-status').textContent = 'Đang lấy gợi ý dựa trên cảm xúc...';
+        
+        // Lưu thông tin gợi ý hiện tại
+        currentRecommendationType = 'emotion';
+        currentOffset = 0;
+        currentParams = { emotion: emotion };
         
         fetch("/recommend_emotion", {
           method: "POST",
@@ -212,19 +263,24 @@
           },
           body: JSON.stringify({
             emotion: emotion,
-            num_recommendations: 5
+            num_recommendations: 5,
+            offset: 0
           }),
         })
         .then(response => response.json())
         .then(data => {
           if (data.status === "success") {
             displayRecommendations(data.recommendations, 'Gợi ý dựa trên cảm xúc: ' + emotion);
+            document.getElementById('load-more-btn').style.display = 'inline-block';
+            currentOffset = 5; // Cập nhật offset
           } else {
             document.getElementById('recommendation-status').textContent = 'Không thể lấy gợi ý bài hát.';
+            document.getElementById('load-more-btn').style.display = 'none';
           }
         })
         .catch(error => {
           document.getElementById('recommendation-status').textContent = 'Lỗi: ' + error.message;
+          document.getElementById('load-more-btn').style.display = 'none';
         });
       }
 
@@ -409,16 +465,14 @@
         const emotionNames = {
           'happy': 'Vui vẻ',
           'sad': 'Buồn bã',
-          'angry': 'Giận dữ',
-          'neutral': 'Bình thường'
+          'angry': 'Giận dữ'
         };
         
         // Ánh xạ màu sắc cho các cảm xúc
         const emotionColors = {
           'happy': '#1DB954',
           'sad': '#5D67E4',
-          'angry': '#E45D5D',
-          'neutral': '#8E8E8E'
+          'angry': '#E45D5D'
         };
         
         // Hiển thị cảm xúc chính và các thanh phần trăm
@@ -436,7 +490,6 @@
             <div class="emotion-bar" style="width: ${emotions.happy * 100}%; background-color: ${emotionColors.happy};">Vui vẻ: ${Math.round(emotions.happy * 100)}%</div>
             <div class="emotion-bar" style="width: ${emotions.sad * 100}%; background-color: ${emotionColors.sad};">Buồn bã: ${Math.round(emotions.sad * 100)}%</div>
             <div class="emotion-bar" style="width: ${emotions.angry * 100}%; background-color: ${emotionColors.angry};">Giận dữ: ${Math.round(emotions.angry * 100)}%</div>
-            <div class="emotion-bar" style="width: ${emotions.neutral * 100}%; background-color: ${emotionColors.neutral};">Bình thường: ${Math.round(emotions.neutral * 100)}%</div>
           </div>
           <button id="reanalyze-btn" class="emotion-btn" onclick="reanalyzeEmotion()">Phân tích lại</button>
         `;
@@ -458,6 +511,103 @@
         }, 500);
       }
 
+      // Hàm tải thêm gợi ý cho tất cả các loại gợi ý
+      function loadMoreRecommendations() {
+        document.getElementById('recommendation-status').textContent = 'Đang tải thêm gợi ý...';
+        
+        if (currentRecommendationType === 'emotion') {
+          // Gọi API cho cảm xúc
+          fetch("/recommend_emotion", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              emotion: currentParams.emotion,
+              num_recommendations: 5,
+              offset: currentOffset
+            }),
+          })
+          .then(response => response.json())
+          .then(data => {
+            if (data.status === "success") {
+              appendRecommendations(data.recommendations);
+              currentOffset += 5;
+            } else {
+              document.getElementById('recommendation-status').textContent = 'Không thể tải thêm gợi ý.';
+            }
+          })
+          .catch(error => {
+            document.getElementById('recommendation-status').textContent = 'Lỗi: ' + error.message;
+          });
+        } else {
+          // Gọi API chung cho các loại gợi ý khác
+          const requestBody = {
+            type: currentRecommendationType,
+            num_recommendations: 5,
+            offset: currentOffset
+          };
+          
+          // Thêm các tham số cụ thể cho từng loại gợi ý
+          if (currentRecommendationType === 'track') {
+            requestBody.track_id = currentParams.track_id;
+          } else if (currentRecommendationType === 'genre') {
+            requestBody.genre = currentParams.genre;
+          } else if (currentRecommendationType === 'features') {
+            requestBody.features = currentParams.features;
+          }
+          
+          fetch("/recommend", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(requestBody),
+          })
+          .then(response => response.json())
+          .then(data => {
+            if (data.status === "success") {
+              appendRecommendations(data.recommendations);
+              currentOffset += 5;
+            } else {
+              document.getElementById('recommendation-status').textContent = 'Không thể tải thêm gợi ý.';
+            }
+          })
+          .catch(error => {
+            document.getElementById('recommendation-status').textContent = 'Lỗi: ' + error.message;
+          });
+        }
+      }
+
+      // Hàm để thêm gợi ý vào danh sách hiện tại
+      function appendRecommendations(recommendations) {
+        const container = document.getElementById('recommendations-container');
+        
+        if (!recommendations || recommendations.length === 0) {
+          document.getElementById('recommendation-status').textContent = 'Không còn gợi ý phù hợp.';
+          return;
+        }
+        
+        // Hiển thị từng bài hát được gợi ý
+        recommendations.forEach(track => {
+          const trackElement = document.createElement('div');
+          trackElement.className = 'track-item';
+          trackElement.onclick = () => playTrack(track.uri);
+          
+          trackElement.innerHTML = `
+            <img src="${track.image || '/static/default-album.jpg'}" alt="Album art">
+            <div class="track-info">
+              <h3>${track.name || 'Unknown Track'}</h3>
+              <p>${track.artist || 'Unknown Artist'}</p>
+            </div>
+          `;
+          
+          container.appendChild(trackElement);
+        });
+        
+        document.getElementById('recommendation-status').textContent = 'Đã tải thêm gợi ý mới';
+      }
+
       // Bắt đầu với tab gợi ý thủ công khi trang được tải
       document.addEventListener('DOMContentLoaded', function() {
         switchTab('manual-tab');
@@ -466,128 +616,153 @@
   </head>
   <body>
     <div class="container">
-      <div class="user-info">
-        <img
-          src="{{ user.images[0].url if user.images else '' }}"
-          alt="Profile"
-          class="profile-pic"
-        />
-        <span>{{ user.display_name }}</span>
-        <a href="{{ url_for('logout') }}" class="logout-btn">Đăng xuất</a>
-      </div>
-      
-      <h1>Music Recommendation System</h1>
-      
-      <!-- Phát nhạc hiện tại -->
-      <div id="now-playing">
-        <h2>Đang phát</h2>
-        <div id="now-playing-info">
-          <p>Chưa có bài hát nào đang phát</p>
+      <!-- Header cố định -->
+      <div class="sticky-header">
+        <div class="user-info">
+          <img
+            src="{{ user.images[0].url if user.images else '' }}"
+            alt="Profile"
+            class="profile-pic"
+          />
+          <span>{{ user.display_name }}</span>
+          <a href="{{ url_for('logout') }}" class="logout-btn">Đăng xuất</a>
         </div>
-        <div id="player-controls">
-          <button onclick="window.spotifyPlayer.previousTrack()">Trước</button>
-          <button onclick="window.spotifyPlayer.togglePlay()">Phát/Dừng</button>
-          <button onclick="window.spotifyPlayer.nextTrack()">Tiếp</button>
-        </div>
+        <h1>Music Recommendation System</h1>
       </div>
       
-      <!-- Tab điều hướng -->
-      <div class="tabs">
-        <button class="tab-link active" data-tab="manual-tab" onclick="switchTab('manual-tab')">Gợi ý thủ công</button>
-        <button class="tab-link" data-tab="emotion-tab" onclick="switchTab('emotion-tab')">Gợi ý theo cảm xúc</button>
-      </div>
-      
-      <!-- Tab nội dung -->
-      <div class="tab-content" id="manual-tab">
-        <div class="recommendation-section">
-          <h2>Gợi ý bài hát</h2>
-          
-          <div class="recommendation-methods">
-            <!-- Gợi ý theo thể loại -->
-            <div class="recommendation-method">
-              <h3>Theo thể loại</h3>
-              <select id="genre-select" class="genre-select">
-                <option value="">-- Chọn thể loại --</option>
-                {% for genre in genres %}
-                <option value="{{ genre }}">{{ genre }}</option>
-                {% endfor %}
-              </select>
-              <button onclick="recommendByGenre()">Tìm kiếm</button>
+      <!-- Bố cục 2 cột -->
+      <div class="player-container">
+        <!-- Cột trái: Phát nhạc và danh sách -->
+        <div class="player-left-panel">
+          <!-- Phát nhạc hiện tại -->
+          <div id="now-playing" class="panel">
+            <div class="panel-header">
+              <h2 class="panel-title">Đang phát</h2>
             </div>
-            
-            <!-- Gợi ý theo đặc tính -->
-            <div class="recommendation-method">
-              <h3>Theo đặc tính âm nhạc</h3>
-              <div class="feature-sliders">
-                <div class="feature-slider">
-                  <label for="danceability">Khả năng nhảy (Danceability):</label>
-                  <input type="range" id="danceability" min="0" max="1" step="0.1" value="0.5">
+            <div id="now-playing-info">
+              <p>Chưa có bài hát nào đang phát</p>
+            </div>
+            <div id="player-controls">
+              <button onclick="window.spotifyPlayer.previousTrack()">Trước</button>
+              <button onclick="window.spotifyPlayer.togglePlay()">Phát/Dừng</button>
+              <button onclick="window.spotifyPlayer.nextTrack()">Tiếp</button>
+            </div>
+          </div>
+          
+          <!-- Danh sách bài hát của người dùng -->
+          <div class="panel">
+            <div class="panel-header">
+              <h2 class="panel-title">Danh sách bài hát của bạn</h2>
+            </div>
+            <div class="track-list">
+              {% for track in tracks %}
+              <div class="track-item">
+                <img src="{{ track.track.album.images[0].url }}" alt="Album art" />
+                <div class="track-info">
+                  <h3>{{ track.track.name }}</h3>
+                  <p>{{ track.track.artists[0].name }}</p>
                 </div>
-                <div class="feature-slider">
-                  <label for="energy">Năng lượng (Energy):</label>
-                  <input type="range" id="energy" min="0" max="1" step="0.1" value="0.5">
-                </div>
-                <div class="feature-slider">
-                  <label for="acousticness">Acoustic:</label>
-                  <input type="range" id="acousticness" min="0" max="1" step="0.1" value="0.5">
-                </div>
-                <div class="feature-slider">
-                  <label for="valence">Tâm trạng (Valence):</label>
-                  <input type="range" id="valence" min="0" max="1" step="0.1" value="0.5">
+                <div class="track-actions">
+                  <button onclick="playTrack('{{ track.track.uri }}')">Phát</button>
+                  <button onclick="recommendSimilarTracks('{{ track.track.id }}')">Tương tự</button>
                 </div>
               </div>
-              <button onclick="recommendByFeatures()">Tìm kiếm</button>
-            </div>
-            
-            <!-- Gợi ý ngẫu nhiên -->
-            <div class="recommendation-method">
-              <h3>Khám phá</h3>
-              <button onclick="recommendRandom()">Gợi ý ngẫu nhiên</button>
+              {% endfor %}
             </div>
           </div>
         </div>
-      </div>
-      
-      <div class="tab-content" id="emotion-tab" style="display: none;">
-        <div class="emotion-section">
-          <h2>Gợi ý theo cảm xúc</h2>
-          
-          <div class="camera-container">
-            <video id="camera-feed" autoplay playsinline></video>
-            <div id="emotion-display" class="emotion-display">
-              <p>Đang kết nối với camera...</p>
-            </div>
+        
+        <!-- Cột phải: Hệ thống gợi ý -->
+        <div class="player-right-panel">
+          <!-- Tab điều hướng -->
+          <div class="tabs">
+            <button class="tab-link active" data-tab="manual-tab" onclick="switchTab('manual-tab')">Gợi ý thủ công</button>
+            <button class="tab-link" data-tab="emotion-tab" onclick="switchTab('emotion-tab')">Gợi ý theo cảm xúc</button>
           </div>
           
-          <div class="emotion-info">
-            <p>Hệ thống sẽ phân tích cảm xúc của bạn trong 5 giây, sau đó sử dụng cảm xúc cuối cùng để đưa ra gợi ý.</p>
-            <p>Nhấn "Phân tích lại" để bắt đầu quá trình phân tích mới.</p>
-            <p>Các cảm xúc được nhận diện: Vui vẻ, Buồn bã, Giận dữ, Bình thường</p>
+          <!-- Tab nội dung -->
+          <div class="tab-content" id="manual-tab">
+            <div class="recommendation-section panel">
+              <div class="panel-header">
+                <h2 class="panel-title">Gợi ý bài hát</h2>
+              </div>
+              
+              <div class="recommendation-methods">
+                <!-- Gợi ý theo thể loại -->
+                <div class="recommendation-method">
+                  <h3>Theo thể loại</h3>
+                  <select id="genre-select" class="genre-select">
+                    <option value="">-- Chọn thể loại --</option>
+                    {% for genre in genres %}
+                    <option value="{{ genre }}">{{ genre }}</option>
+                    {% endfor %}
+                  </select>
+                  <button onclick="recommendByGenre()">Tìm kiếm</button>
+                </div>
+                
+                <!-- Gợi ý theo đặc tính -->
+                <div class="recommendation-method">
+                  <h3>Theo đặc tính âm nhạc</h3>
+                  <div class="feature-sliders">
+                    <div class="feature-slider">
+                      <label for="danceability">Khả năng nhảy (Danceability):</label>
+                      <input type="range" id="danceability" min="0" max="1" step="0.1" value="0.5">
+                    </div>
+                    <div class="feature-slider">
+                      <label for="energy">Năng lượng (Energy):</label>
+                      <input type="range" id="energy" min="0" max="1" step="0.1" value="0.5">
+                    </div>
+                    <div class="feature-slider">
+                      <label for="acousticness">Acoustic:</label>
+                      <input type="range" id="acousticness" min="0" max="1" step="0.1" value="0.5">
+                    </div>
+                    <div class="feature-slider">
+                      <label for="valence">Tâm trạng (Valence):</label>
+                      <input type="range" id="valence" min="0" max="1" step="0.1" value="0.5">
+                    </div>
+                  </div>
+                  <button onclick="recommendByFeatures()">Tìm kiếm</button>
+                </div>
+                
+                <!-- Gợi ý ngẫu nhiên -->
+                <div class="recommendation-method">
+                  <h3>Khám phá</h3>
+                  <button onclick="recommendRandom()">Gợi ý ngẫu nhiên</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="tab-content" id="emotion-tab" style="display: none;">
+            <div class="emotion-section panel">
+              <div class="panel-header">
+                <h2 class="panel-title">Gợi ý theo cảm xúc</h2>
+              </div>
+              
+              <div class="camera-container">
+                <video id="camera-feed" autoplay playsinline></video>
+                <div id="emotion-display" class="emotion-display">
+                  <p>Đang kết nối với camera...</p>
+                </div>
+              </div>
+              
+              <div class="emotion-info">
+                <p>Hệ thống sẽ phân tích cảm xúc của bạn trong 5 giây, sau đó sử dụng cảm xúc cuối cùng để đưa ra gợi ý.</p>
+                <p>Nhấn "Phân tích lại" để bắt đầu quá trình phân tích mới.</p>
+                <p>Các cảm xúc được nhận diện: Vui vẻ, Buồn bã, Giận dữ</p>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Kết quả gợi ý -->
+          <div class="recommendation-results panel">
+            <div class="panel-header">
+              <h3 id="recommendation-status" class="panel-title">Chọn phương thức gợi ý ở trên</h3>
+              <button id="load-more-btn" onclick="loadMoreRecommendations()" style="display: none;">Xem thêm</button>
+            </div>
+            <div id="recommendations-container" class="track-list"></div>
           </div>
         </div>
-      </div>
-      
-      <!-- Kết quả gợi ý -->
-      <div class="recommendation-results">
-        <h3 id="recommendation-status">Chọn phương thức gợi ý ở trên</h3>
-        <div id="recommendations-container" class="track-list"></div>
-      </div>
-      
-      <h2>Danh sách bài hát của bạn</h2>
-      <div class="track-list">
-        {% for track in tracks %}
-        <div class="track-item">
-          <img src="{{ track.track.album.images[0].url }}" alt="Album art" />
-          <div class="track-info">
-            <h3>{{ track.track.name }}</h3>
-            <p>{{ track.track.artists[0].name }}</p>
-          </div>
-          <div class="track-actions">
-            <button onclick="playTrack('{{ track.track.uri }}')">Play</button>
-            <button onclick="recommendSimilarTracks('{{ track.track.id }}')">Tương tự</button>
-          </div>
-        </div>
-        {% endfor %}
       </div>
     </div>
   </body>

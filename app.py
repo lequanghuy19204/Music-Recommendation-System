@@ -143,6 +143,7 @@ def recommend():
     # Các loại gợi ý khác nhau
     rec_type = data.get('type', 'random')
     num_recs = data.get('num_recommendations', 5)
+    offset = data.get('offset', 0)  # Dùng offset cho tất cả các loại gợi ý
     
     # Gợi ý dựa trên bài hát
     if rec_type == 'track':
@@ -150,7 +151,7 @@ def recommend():
         if not track_id:
             return jsonify({"status": "error", "message": "No track ID provided"}), 400
         
-        rec_tracks = recommender.recommend_by_track_id(track_id, num_recs)
+        rec_tracks = recommender.recommend_by_track_id(track_id, num_recs, offset)
     
     # Gợi ý dựa trên thể loại
     elif rec_type == 'genre':
@@ -158,16 +159,16 @@ def recommend():
         if not genre:
             return jsonify({"status": "error", "message": "No genre provided"}), 400
         
-        rec_tracks = recommender.recommend_by_genre(genre, num_recs)
+        rec_tracks = recommender.recommend_by_genre(genre, num_recs, offset)
     
     # Gợi ý dựa trên đặc điểm âm nhạc
     elif rec_type == 'features':
         features = data.get('features', {})
-        rec_tracks = recommender.recommend_by_features(features, num_recs)
+        rec_tracks = recommender.recommend_by_features(features, num_recs, offset)
     
     # Gợi ý ngẫu nhiên
     else:  # random
-        rec_tracks = recommender.recommend_random(num_recs)
+        rec_tracks = recommender.recommend_random(num_recs, offset)
     
     # Lấy chi tiết về các bài hát được gợi ý
     tracks_details = recommender.get_track_details(rec_tracks)
@@ -239,7 +240,7 @@ def analyze_emotion():
             return jsonify({"status": "error", "message": "No image data provided"}), 400
         
         # Chuyển đổi dữ liệu hình ảnh từ base64 sang numpy array
-        image_data = image_data.split(',')[1]  # Bỏ qua phần header (data:image/jpeg;base64,)
+        image_data = image_data.split(',')[1] 
         image_bytes = base64.b64decode(image_data)
         image_np = np.frombuffer(image_bytes, dtype=np.uint8)
         image = cv2.imdecode(image_np, cv2.IMREAD_COLOR)
@@ -262,13 +263,18 @@ def analyze_emotion():
             # Lấy thông tin cảm xúc
             emotions = result['emotion']
             
-            # Chỉ giữ lại các cảm xúc cần thiết
+            # Chỉ giữ lại ba cảm xúc: happy, sad, angry
             filtered_emotions = {
                 'happy': emotions.get('happy', 0) / 100,
                 'sad': emotions.get('sad', 0) / 100,
                 'angry': emotions.get('angry', 0) / 100,
-                'neutral': emotions.get('neutral', 0) / 100
             }
+            
+            # Chuẩn hóa lại tổng bằng 1
+            total = sum(filtered_emotions.values())
+            if total > 0:
+                for key in filtered_emotions:
+                    filtered_emotions[key] /= total
             
             # Xác định cảm xúc chính từ các cảm xúc đã lọc
             dominant_emotion = max(filtered_emotions, key=filtered_emotions.get)
@@ -300,6 +306,7 @@ def recommend_emotion():
     data = request.json
     emotion = data.get('emotion')
     num_recs = data.get('num_recommendations', 5)
+    offset = data.get('offset', 0)  # Thêm tham số offset
     
     if not emotion:
         return jsonify({"status": "error", "message": "No emotion provided"}), 400
@@ -308,7 +315,7 @@ def recommend_emotion():
     features = map_emotion_to_features(emotion)
     
     # Gọi hàm gợi ý dựa trên đặc tính
-    rec_tracks = recommender.recommend_by_features(features, num_recs)
+    rec_tracks = recommender.recommend_by_features(features, num_recs, offset)
     
     # Lấy chi tiết về các bài hát được gợi ý
     tracks_details = recommender.get_track_details(rec_tracks)
