@@ -8,6 +8,7 @@ import random
 import tensorflow as tf
 from tensorflow.keras import layers, Model
 from sklearn.model_selection import train_test_split
+from collections import defaultdict
 
 class MusicRecommender:
     def __init__(self, data_dir='data'):
@@ -23,10 +24,18 @@ class MusicRecommender:
         self.nn_model = None
         self.scaler = MinMaxScaler()
         
+        # Biến mới để lưu trữ thông tin về độ phổ biến từ triplets
+        self.popularity_from_triplets = {}
+        self.song_id_to_spotify_id = {}  # Map từ song_id trong triplets sang Spotify ID
+        
         # Load and process data
         self.load_data()
         self.process_data()
         self.create_recommendation_model()
+        
+        # Gọi hàm mới để xử lý dữ liệu triplets
+        self.load_and_process_triplets()
+        self.improve_song_id_mapping()
     
     def load_data(self):
         """Load all CSV data files"""
@@ -194,6 +203,22 @@ class MusicRecommender:
         # Get the track IDs
         recommended_track_ids = [self.track_ids[i] for i in similar_indices]
         
+        # Thêm đoạn xử lý độ phổ biến vào cuối
+        if self.popularity_from_triplets:
+            # Tính điểm kết hợp giữa độ tương tự và độ phổ biến
+            track_scores = []
+            for rec_id in recommended_track_ids:
+                # Lấy độ phổ biến kết hợp
+                popularity = self.get_combined_popularity(rec_id)
+                # Thêm vào danh sách điểm
+                track_scores.append((rec_id, popularity))
+            
+            # Sắp xếp theo điểm giảm dần
+            track_scores.sort(key=lambda x: x[1], reverse=True)
+            
+            # Cập nhật danh sách kết quả
+            recommended_track_ids = [track_id for track_id, _ in track_scores]
+        
         return recommended_track_ids
     
     def recommend_by_genre(self, genre, n=5, offset=0):
@@ -324,6 +349,250 @@ class MusicRecommender:
                 tracks_details.append(track_info)
         
         return tracks_details
+
+    def load_and_process_triplets(self):
+        """Tải và xử lý dữ liệu từ file train_triplets1million"""
+        triplets_file = os.path.join(self.data_dir, 'train_triplets1million.csv')
+        
+        # Khởi tạo các biến để tránh lỗi khi file không tồn tại
+        self.play_counts = {}
+        self.popularity_from_triplets = {}
+        
+        if not os.path.exists(triplets_file):
+            print(f"Không tìm thấy file {triplets_file}")
+            # Tạo dữ liệu mẫu để tránh lỗi
+            self.generate_sample_triplets_data()
+            return
+        
+        try:
+            print("Đang tải dữ liệu từ file train_triplets1million.csv...")
+            # Chỉ định dtype để đảm bảo song_id là chuỗi
+            triplets_data = pd.read_csv(triplets_file, dtype={'song': str, 'user': str})
+            
+            # Tính tổng số lần nghe cho mỗi bài hát
+            song_play_counts = defaultdict(int)
+            for _, row in triplets_data.iterrows():
+                song_play_counts[row['song']] += row['play_count']
+            
+            # Chuyển đổi thành dataframe
+            song_popularity_df = pd.DataFrame({
+                'song_id': list(song_play_counts.keys()),
+                'play_count': list(song_play_counts.values())
+            })
+            
+            # Chuẩn hóa giá trị play_count thành thang điểm từ 0-100
+            max_play_count = song_popularity_df['play_count'].max()
+            if max_play_count > 0:  # Tránh chia cho 0
+                song_popularity_df['normalized_popularity'] = song_popularity_df['play_count'].apply(
+                    lambda x: int(min(100, (x / max_play_count) * 100))
+                )
+            else:
+                song_popularity_df['normalized_popularity'] = 0
+            
+            # Lưu BOTH raw play_count và normalized_popularity vào dictionary
+            self.play_counts = dict(zip(
+                song_popularity_df['song_id'],
+                song_popularity_df['play_count']
+            ))
+            
+            self.popularity_from_triplets = dict(zip(
+                song_popularity_df['song_id'],
+                song_popularity_df['normalized_popularity']
+            ))
+            
+            print(f"Đã xử lý thành công {len(self.popularity_from_triplets)} bài hát từ dữ liệu triplets")
+            
+            # Tạo ánh xạ từ ID song trong triplets sang ID Spotify
+            self.create_song_id_mapping()
+            
+        except Exception as e:
+            print(f"Lỗi khi xử lý file triplets: {e}")
+            # Tạo dữ liệu mẫu khi có lỗi
+            self.generate_sample_triplets_data()
+
+    def generate_sample_triplets_data(self):
+        """Tạo dữ liệu mẫu khi file train_triplets1million không tồn tại"""
+        print("Tạo dữ liệu mẫu cho triplets")
+        
+        # Lấy danh sách spotify_id từ tracks_data
+        if self.tracks_data is not None and not self.tracks_data.empty:
+            spotify_ids = self.tracks_data['id'].tolist()
+            
+            # Tạo song_id mẫu
+            sample_song_ids = [f"SONG_{i}" for i in range(min(100, len(spotify_ids)))]
+            
+            # Tạo play_counts mẫu
+            for i, song_id in enumerate(sample_song_ids):
+                self.play_counts[song_id] = random.randint(10, 1000)
+                self.popularity_from_triplets[song_id] = random.randint(1, 100)
+                
+                # Ánh xạ với spotify_id
+                if i < len(spotify_ids):
+                    self.song_id_to_spotify_id[song_id] = spotify_ids[i]
+            
+            print(f"Đã tạo {len(sample_song_ids)} mẫu dữ liệu triplets")
+        else:
+            print("Không có dữ liệu tracks để tạo mẫu triplets")
+
+    def create_song_id_mapping(self):
+        """Tạo bảng ánh xạ giữa song_id trong triplets và Spotify ID"""
+        # Trong thực tế, bạn cần một bảng ánh xạ hoặc API để thực hiện việc này
+        # Đây là một phương pháp đơn giản hóa sử dụng một số kỹ thuật heuristic
+        
+        # Giả định: Nếu bạn có file chứa thông tin ánh xạ (không có trong mô tả)
+        mapping_file = os.path.join(self.data_dir, 'song_to_spotify_map.csv')
+        
+        if os.path.exists(mapping_file):
+            # Nếu có file ánh xạ sẵn
+            mapping_df = pd.read_csv(mapping_file)
+            self.song_id_to_spotify_id = dict(zip(
+                mapping_df['song_id'], 
+                mapping_df['spotify_id']
+            ))
+        else:
+            # Nếu không có file ánh xạ, chúng ta tạo một ánh xạ đơn giản dựa trên tracks_data
+            # Đây chỉ là giải pháp tạm thời, không chính xác trong thực tế
+            print("Không tìm thấy file ánh xạ, tạo ánh xạ tạm thời...")
+            
+            # Lấy danh sách song_id từ triplets
+            song_ids = list(self.popularity_from_triplets.keys())
+            
+            # Lấy danh sách spotify_id từ tracks_data
+            if self.tracks_data is not None:
+                spotify_ids = self.tracks_data['id'].tolist()
+                
+                # Tạo ánh xạ 1-1 đơn giản (chỉ để demo)
+                # Trong thực tế, bạn cần một phương pháp ánh xạ phức tạp hơn
+                for i, song_id in enumerate(song_ids):
+                    if i < len(spotify_ids):
+                        self.song_id_to_spotify_id[song_id] = spotify_ids[i]
+    
+    def get_combined_popularity(self, spotify_id):
+        """Kết hợp độ phổ biến từ Spotify và từ dữ liệu triplets"""
+        # Lấy độ phổ biến từ Spotify (thang điểm 0-100)
+        spotify_popularity = 0
+        if self.tracks_data is not None:
+            track_info = self.tracks_data[self.tracks_data['id'] == spotify_id]
+            if not track_info.empty:
+                spotify_popularity = track_info.iloc[0].get('track_popularity', 0)
+        
+        # Lấy độ phổ biến từ triplets (đã chuẩn hóa từ 0-100)
+        triplet_popularity = 0
+        # Tìm song_id tương ứng với spotify_id
+        song_id = None
+        for s_id, sp_id in self.song_id_to_spotify_id.items():
+            if sp_id == spotify_id:
+                song_id = s_id
+                break
+        
+        if song_id and song_id in self.popularity_from_triplets:
+            triplet_popularity = self.popularity_from_triplets[song_id]
+        
+        # Kết hợp hai giá trị với trọng số (60% triplets, 40% Spotify)
+        combined_popularity = (0.6 * triplet_popularity) + (0.4 * spotify_popularity)
+        
+        return combined_popularity
+    
+    def recommend_popular_tracks(self, n=10, offset=0):
+        """Đề xuất bài hát dựa trên độ phổ biến trong cộng đồng"""
+        try:
+            if not self.play_counts:  # Thay popularity_from_triplets bằng play_counts
+                print("Không có dữ liệu phổ biến từ triplets, sử dụng gợi ý ngẫu nhiên")
+                return self.recommend_random(n, offset)
+            
+            # Sắp xếp theo số lượt nghe thực tế thay vì độ phổ biến chuẩn hóa
+            popularity_sorted = sorted(
+                self.play_counts.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )
+            
+            # Kiểm tra offset hợp lệ
+            if offset >= len(popularity_sorted):
+                offset = 0
+            
+            # Lấy các song_id từ vị trí offset đến offset+n
+            selected_songs = popularity_sorted[offset:offset+n]
+            
+            # Chuyển đổi từ song_id sang spotify_id
+            result_tracks = []
+            for song_id, _ in selected_songs:
+                if song_id in self.song_id_to_spotify_id:
+                    spotify_id = self.song_id_to_spotify_id[song_id]
+                    if spotify_id:  # Kiểm tra spotify_id không rỗng
+                        result_tracks.append(spotify_id)
+            
+            # Nếu không đủ kết quả, bổ sung thêm các bài hát ngẫu nhiên
+            if len(result_tracks) < n:
+                print(f"Không đủ kết quả từ dữ liệu phổ biến ({len(result_tracks)}/{n}), bổ sung thêm bài hát ngẫu nhiên")
+                additional_tracks = self.recommend_random(n - len(result_tracks))
+                result_tracks.extend(additional_tracks)
+            
+            return result_tracks
+        except Exception as e:
+            print(f"Lỗi trong recommend_popular_tracks: {e}")
+            return self.recommend_random(n, offset)
+
+    def get_play_count(self, spotify_id):
+        """Lấy số lượt nghe của bài hát từ dữ liệu triplets"""
+        # Kiểm tra nếu spotify_id là None hoặc rỗng
+        if not spotify_id:
+            return 0
+        
+        try:
+            # Tìm song_id tương ứng với spotify_id
+            song_id = None
+            for s_id, sp_id in self.song_id_to_spotify_id.items():
+                if sp_id == spotify_id:
+                    song_id = s_id
+                    break
+            
+            if song_id and song_id in self.play_counts:
+                return int(self.play_counts[song_id])
+        except Exception as e:
+            print(f"Lỗi khi lấy play_count: {e}")
+        
+        return 0
+
+    def improve_song_id_mapping(self):
+        """Cải thiện ánh xạ giữa song_id và spotify_id"""
+        # Nếu có dữ liệu album với các thông tin như tên bài hát và nghệ sĩ
+        if self.albums_data is not None and not self.albums_data.empty:
+            print("Đang cải thiện ánh xạ song_id dựa trên tên bài hát...")
+            # Tạo từ điển ánh xạ tên bài hát
+            track_to_spotify = {}
+            
+            # Lặp qua toàn bộ dữ liệu album để lấy thông tin
+            for _, row in self.albums_data.iterrows():
+                track_name = row.get('track_name', '')
+                spotify_id = row.get('track_id', '')
+                if track_name and spotify_id:
+                    # Tạo key tìm kiếm đơn giản từ tên bài hát
+                    search_key = track_name.lower().strip()
+                    track_to_spotify[search_key] = spotify_id
+            
+            # Sử dụng ánh xạ này để bổ sung song_id_to_spotify_id
+            updated_count = 0
+            for song_id in list(self.play_counts.keys()):
+                # Kiểm tra kiểu dữ liệu để tránh lỗi
+                if not isinstance(song_id, str):
+                    # Chuyển đổi sang chuỗi nếu không phải chuỗi
+                    song_id_str = str(song_id)
+                else:
+                    song_id_str = song_id
+                
+                # Nếu song_id có thể trích xuất thông tin tên bài hát
+                try:
+                    parts = song_id_str.split('_')
+                    if len(parts) > 1:
+                        potential_track_name = '_'.join(parts[1:]).lower()
+                        if potential_track_name in track_to_spotify:
+                            self.song_id_to_spotify_id[song_id] = track_to_spotify[potential_track_name]
+                            updated_count += 1
+                except Exception as e:
+                    print(f"Lỗi khi xử lý song_id {song_id}: {e}")
+            
+            print(f"Đã cải thiện {updated_count} ánh xạ song_id")
 
 # Helper function to get available genres from the dataset
 def get_available_genres(data_dir='data'):

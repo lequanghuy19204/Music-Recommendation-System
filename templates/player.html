@@ -427,16 +427,129 @@
             currentTrackIndex = index; // Cập nhật index bài hát đang phát
           };
           
+          // Kiểm tra play_count trước khi sử dụng
+          const playCount = track.play_count || 0;
+          
+          // Định dạng số lượt nghe
+          const formattedPlayCount = formatPlayCount(playCount);
+          
+          // Hiển thị thông tin bài hát và lượt nghe
           trackElement.innerHTML = `
             <img src="${track.image || '/static/default-album.jpg'}" alt="Album art">
             <div class="track-info">
               <h3>${track.name || 'Unknown Track'}</h3>
               <p>${track.artist || 'Unknown Artist'}</p>
+              <div class="play-count-display">
+                <i class="play-count-icon">🎧</i> ${formattedPlayCount} lượt nghe
+              </div>
+            </div>
+            <div class="track-actions">
+              <button onclick="event.stopPropagation(); saveTrackToLibrary('${track.id}', this);" class="like-btn">♡</button>
             </div>
           `;
           
           container.appendChild(trackElement);
         });
+      }
+
+      // Cập nhật hàm saveTrackToLibrary
+      function saveTrackToLibrary(trackId, button) {
+        if (!trackId) {
+          alert('Không thể lưu bài hát này vào thư viện.');
+          return;
+        }
+        
+        // Hiển thị trạng thái đang xử lý
+        button.disabled = true;
+        button.textContent = '...';
+        
+        fetch("/save_track", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            track_id: trackId
+          }),
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.status === "success") {
+            // Cập nhật nút tim thành đã thích
+            button.textContent = '❤️';
+            button.classList.add('liked');
+            
+            // Tải lại danh sách bài hát của người dùng
+            loadUserLibrary();
+          } else {
+            // Hiển thị lỗi
+            alert(data.message || 'Không thể lưu bài hát.');
+            button.textContent = '♡';
+          }
+          button.disabled = false;
+        })
+        .catch(error => {
+          console.error('Lỗi:', error);
+          alert('Đã xảy ra lỗi khi lưu bài hát.');
+          button.textContent = '♡';
+          button.disabled = false;
+        });
+      }
+
+      // Thêm hàm mới để tải danh sách bài hát của người dùng
+      function loadUserLibrary() {
+        const libraryContainer = document.querySelector('.panel:nth-child(2) .track-list');
+        
+        if (!libraryContainer) {
+          console.error('Không tìm thấy container danh sách bài hát!');
+          return;
+        }
+        
+        // Hiển thị trạng thái đang tải
+        libraryContainer.innerHTML = '<div class="loading-message">Đang tải danh sách bài hát...</div>';
+        
+        // Tải danh sách bài hát mới
+        fetch('/get_user_library')
+          .then(response => response.json())
+          .then(data => {
+            if (data.status === 'success') {
+              // Tạo danh sách bài hát mới
+              const tracksHTML = data.tracks.map(track => `
+                <div class="track-item">
+                  <img src="${track.image || '/static/default-album.jpg'}" alt="Album art" />
+                  <div class="track-info">
+                    <h3>${track.name || 'Unknown Track'}</h3>
+                    <p>${track.artist || 'Unknown Artist'}</p>
+                  </div>
+                  <div class="track-actions">
+                    <button onclick="playTrack('${track.uri}')">Phát</button>
+                  </div>
+                </div>
+              `).join('');
+              
+              // Nếu không có bài hát nào
+              if (tracksHTML === '') {
+                libraryContainer.innerHTML = '<p>Bạn chưa lưu bài hát nào vào thư viện</p>';
+              } else {
+                libraryContainer.innerHTML = tracksHTML;
+              }
+              
+              // Thêm hiệu ứng cho bài hát mới nhất
+              const firstTrack = libraryContainer.querySelector('.track-item:first-child');
+              if (firstTrack) {
+                firstTrack.classList.add('newly-added');
+                setTimeout(() => {
+                  firstTrack.classList.remove('newly-added');
+                }, 3000);
+              }
+            } else {
+              libraryContainer.innerHTML = '<p>Không thể tải danh sách bài hát</p>';
+            }
+          })
+          .catch(error => {
+            console.error('Lỗi khi tải danh sách bài hát:', error);
+            libraryContainer.innerHTML = '<p>Đã xảy ra lỗi khi tải danh sách bài hát</p>';
+          });
       }
 
       // Chuyển đổi giữa các tab
@@ -633,12 +746,230 @@
         }, 500);
       }
 
-      // Hàm tải thêm gợi ý cho tất cả các loại gợi ý
-      function loadMoreRecommendations() {
-        document.getElementById('recommendation-status').textContent = 'Đang tải thêm gợi ý...';
+      // Thêm hàm mới để lấy bài hát phổ biến
+      function getPopularTracks() {
+        document.getElementById('recommendation-status').textContent = 'Đang lấy danh sách bài hát phổ biến...';
         
-        if (currentRecommendationType === 'emotion') {
-          // Gọi API cho cảm xúc
+        // Lưu thông tin gợi ý hiện tại
+        currentRecommendationType = 'popular';
+        currentOffset = 0;
+        currentParams = {};
+        
+        fetch("/popular_tracks", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            num_recommendations: 10,
+            offset: 0
+          }),
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.status === "success") {
+            displayPopularRecommendations(data.recommendations, 'Bài hát phổ biến trong cộng đồng');
+            document.getElementById('load-more-btn').style.display = 'inline-block';
+            currentOffset = 10; // Cập nhật offset
+          } else {
+            document.getElementById('recommendation-status').textContent = 'Không thể lấy danh sách bài hát phổ biến.';
+            document.getElementById('load-more-btn').style.display = 'none';
+          }
+        })
+        .catch(error => {
+          document.getElementById('recommendation-status').textContent = 'Lỗi: ' + error.message;
+          document.getElementById('load-more-btn').style.display = 'none';
+        });
+      }
+
+      // Thêm hàm hiển thị bài hát phổ biến
+      function displayPopularRecommendations(recommendations, title) {
+        const container = document.getElementById('recommendations-container');
+        
+        // Cập nhật tiêu đề
+        document.getElementById('recommendation-status').textContent = title;
+        
+        // Xóa các gợi ý hiện tại
+        container.innerHTML = '';
+        
+        if (!recommendations || recommendations.length === 0) {
+          container.innerHTML = '<p>Không tìm thấy bài hát phổ biến.</p>';
+          currentRecommendationTracks = [];
+          currentTrackIndex = -1;
+          return;
+        }
+        
+        // Lưu lại danh sách bài hát gợi ý hiện tại
+        currentRecommendationTracks = recommendations;
+        currentTrackIndex = -1;
+        
+        // Hiển thị từng bài hát được gợi ý
+        recommendations.forEach((track, index) => {
+          const trackElement = document.createElement('div');
+          trackElement.className = 'track-item';
+          trackElement.dataset.index = index; // Lưu index vào phần tử
+          trackElement.onclick = () => {
+            playTrack(track.uri);
+            currentTrackIndex = index; // Cập nhật index bài hát đang phát
+          };
+          
+          // Kiểm tra play_count trước khi sử dụng
+          const playCount = track.play_count || 0;
+          
+          // Định dạng số lượt nghe
+          const formattedPlayCount = formatPlayCount(playCount);
+          
+          // Hiển thị thông tin bài hát và lượt nghe
+          trackElement.innerHTML = `
+            <img src="${track.image || '/static/default-album.jpg'}" alt="Album art">
+            <div class="track-info">
+              <h3>${track.name || 'Unknown Track'}</h3>
+              <p>${track.artist || 'Unknown Artist'}</p>
+              <div class="play-count-display">
+                <i class="play-count-icon">🎧</i> ${formattedPlayCount} lượt nghe
+              </div>
+            </div>
+            <div class="track-actions">
+              <button onclick="event.stopPropagation(); saveTrackToLibrary('${track.id}', this);" class="like-btn">♡</button>
+            </div>
+          `;
+          
+          container.appendChild(trackElement);
+        });
+      }
+
+      // Thêm hàm định dạng số lượt nghe
+      function formatPlayCount(count) {
+        // Kiểm tra nếu count là undefined hoặc null
+        if (count === undefined || count === null) {
+          return '0';
+        }
+        
+        // Chuyển đổi count thành số nếu là chuỗi
+        count = Number(count);
+        
+        // Kiểm tra nếu không phải số hợp lệ
+        if (isNaN(count)) {
+          return '0';
+        }
+        
+        if (count >= 1000000) {
+          return (count / 1000000).toFixed(1) + 'M';
+        } else if (count >= 1000) {
+          return (count / 1000).toFixed(1) + 'K';
+        } else {
+          return count.toString();
+        }
+      }
+
+      // Cập nhật hàm loadMoreRecommendations để xử lý tất cả các loại gợi ý
+      function loadMoreRecommendations() {
+        document.getElementById('recommendation-status').textContent = 'Đang tải thêm...';
+        
+        if (currentRecommendationType === 'popular') {
+          // Gọi API để lấy thêm bài hát phổ biến
+          fetch("/popular_tracks", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              num_recommendations: 10,
+              offset: currentOffset
+            }),
+          })
+          .then(response => response.json())
+          .then(data => {
+            if (data.status === "success") {
+              appendRecommendations(data.recommendations);
+              currentOffset += 10;
+            } else {
+              document.getElementById('recommendation-status').textContent = 'Không thể tải thêm bài hát.';
+            }
+          })
+          .catch(error => {
+            document.getElementById('recommendation-status').textContent = 'Lỗi: ' + error.message;
+          });
+        } else if (currentRecommendationType === 'track') {
+          // Xử lý cho gợi ý dựa trên bài hát
+          fetch("/recommend", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              type: "track",
+              track_id: currentParams.track_id,
+              num_recommendations: 5,
+              offset: currentOffset
+            }),
+          })
+          .then(response => response.json())
+          .then(data => {
+            if (data.status === "success") {
+              appendRecommendations(data.recommendations);
+              currentOffset += 5;
+            } else {
+              document.getElementById('recommendation-status').textContent = 'Không thể tải thêm bài hát.';
+            }
+          })
+          .catch(error => {
+            document.getElementById('recommendation-status').textContent = 'Lỗi: ' + error.message;
+          });
+        } else if (currentRecommendationType === 'genre') {
+          // Xử lý cho gợi ý dựa trên thể loại
+          fetch("/recommend", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              type: "genre",
+              genre: currentParams.genre,
+              num_recommendations: 5,
+              offset: currentOffset
+            }),
+          })
+          .then(response => response.json())
+          .then(data => {
+            if (data.status === "success") {
+              appendRecommendations(data.recommendations);
+              currentOffset += 5;
+            } else {
+              document.getElementById('recommendation-status').textContent = 'Không thể tải thêm bài hát.';
+            }
+          })
+          .catch(error => {
+            document.getElementById('recommendation-status').textContent = 'Lỗi: ' + error.message;
+          });
+        } else if (currentRecommendationType === 'features') {
+          // Xử lý cho gợi ý dựa trên đặc tính
+          fetch("/recommend", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              type: "features",
+              features: currentParams.features,
+              num_recommendations: 5,
+              offset: currentOffset
+            }),
+          })
+          .then(response => response.json())
+          .then(data => {
+            if (data.status === "success") {
+              appendRecommendations(data.recommendations);
+              currentOffset += 5;
+            } else {
+              document.getElementById('recommendation-status').textContent = 'Không thể tải thêm bài hát.';
+            }
+          })
+          .catch(error => {
+            document.getElementById('recommendation-status').textContent = 'Lỗi: ' + error.message;
+          });
+        } else if (currentRecommendationType === 'emotion') {
+          // Xử lý cho gợi ý dựa trên cảm xúc
           fetch("/recommend_emotion", {
             method: "POST",
             headers: {
@@ -656,35 +987,24 @@
               appendRecommendations(data.recommendations);
               currentOffset += 5;
             } else {
-              document.getElementById('recommendation-status').textContent = 'Không thể tải thêm gợi ý.';
+              document.getElementById('recommendation-status').textContent = 'Không thể tải thêm bài hát.';
             }
           })
           .catch(error => {
             document.getElementById('recommendation-status').textContent = 'Lỗi: ' + error.message;
           });
-        } else {
-          // Gọi API chung cho các loại gợi ý khác
-          const requestBody = {
-            type: currentRecommendationType,
-            num_recommendations: 5,
-            offset: currentOffset
-          };
-          
-          // Thêm các tham số cụ thể cho từng loại gợi ý
-          if (currentRecommendationType === 'track') {
-            requestBody.track_id = currentParams.track_id;
-          } else if (currentRecommendationType === 'genre') {
-            requestBody.genre = currentParams.genre;
-          } else if (currentRecommendationType === 'features') {
-            requestBody.features = currentParams.features;
-          }
-          
+        } else if (currentRecommendationType === 'random') {
+          // Xử lý cho gợi ý ngẫu nhiên
           fetch("/recommend", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify(requestBody),
+            body: JSON.stringify({
+              type: "random",
+              num_recommendations: 5,
+              offset: currentOffset
+            }),
           })
           .then(response => response.json())
           .then(data => {
@@ -692,16 +1012,18 @@
               appendRecommendations(data.recommendations);
               currentOffset += 5;
             } else {
-              document.getElementById('recommendation-status').textContent = 'Không thể tải thêm gợi ý.';
+              document.getElementById('recommendation-status').textContent = 'Không thể tải thêm bài hát.';
             }
           })
           .catch(error => {
             document.getElementById('recommendation-status').textContent = 'Lỗi: ' + error.message;
           });
+        } else {
+          document.getElementById('recommendation-status').textContent = 'Không thể tải thêm. Vui lòng chọn phương thức gợi ý.';
         }
       }
 
-      // Hàm để thêm gợi ý vào danh sách hiện tại
+      // Thêm hàm để thêm gợi ý vào danh sách hiện tại
       function appendRecommendations(recommendations) {
         const container = document.getElementById('recommendations-container');
         
@@ -727,11 +1049,24 @@
             currentTrackIndex = index; // Cập nhật index bài hát đang phát
           };
           
+          // Kiểm tra play_count trước khi sử dụng
+          const playCount = track.play_count || 0;
+          
+          // Định dạng số lượt nghe
+          const formattedPlayCount = formatPlayCount(playCount);
+          
+          // Hiển thị thông tin bài hát và lượt nghe
           trackElement.innerHTML = `
             <img src="${track.image || '/static/default-album.jpg'}" alt="Album art">
             <div class="track-info">
               <h3>${track.name || 'Unknown Track'}</h3>
               <p>${track.artist || 'Unknown Artist'}</p>
+              <div class="play-count-display">
+                <i class="play-count-icon">🎧</i> ${formattedPlayCount} lượt nghe
+              </div>
+            </div>
+            <div class="track-actions">
+              <button onclick="event.stopPropagation(); saveTrackToLibrary('${track.id}', this);" class="like-btn">♡</button>
             </div>
           `;
           
@@ -872,7 +1207,6 @@
                 </div>
                 <div class="track-actions">
                   <button onclick="playTrack('{{ track.track.uri }}')">Phát</button>
-                  <button onclick="recommendSimilarTracks('{{ track.track.id }}')">Tương tự</button>
                 </div>
               </div>
               {% endfor %}
@@ -886,6 +1220,7 @@
           <div class="tabs">
             <button class="tab-link active" data-tab="manual-tab" onclick="switchTab('manual-tab')">Gợi ý thủ công</button>
             <button class="tab-link" data-tab="emotion-tab" onclick="switchTab('emotion-tab')">Gợi ý theo cảm xúc</button>
+            <button class="tab-link" data-tab="popular-tab" onclick="switchTab('popular-tab')">Phổ biến trong cộng đồng</button>
           </div>
           
           <!-- Tab nội dung -->
@@ -959,6 +1294,20 @@
                 <p>Nhấn "Phân tích lại" để bắt đầu quá trình phân tích mới.</p>
                 <p>Các cảm xúc được nhận diện: Vui vẻ, Buồn bã, Giận dữ</p>
               </div>
+            </div>
+          </div>
+          
+          <div class="tab-content" id="popular-tab" style="display: none;">
+            <div class="recommendation-section panel">
+              <div class="panel-header">
+                <h2 class="panel-title">Bài hát phổ biến trong cộng đồng</h2>
+              </div>
+              
+              <div class="recommendation-description">
+                <p>Dưới đây là những bài hát được nghe nhiều nhất trong cộng đồng, dựa trên dữ liệu nghe thực tế từ người dùng.</p>
+              </div>
+              
+              <button onclick="getPopularTracks()" class="recommendation-btn">Xem bài hát phổ biến</button>
             </div>
           </div>
           

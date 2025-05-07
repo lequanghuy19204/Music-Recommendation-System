@@ -21,7 +21,7 @@ app.secret_key = 'H550'
 SPOTIFY_CLIENT_ID = os.getenv('SPOTIFY_CLIENT_ID')
 SPOTIFY_CLIENT_SECRET = os.getenv('SPOTIFY_CLIENT_SECRET')
 SPOTIFY_REDIRECT_URI = 'http://127.0.0.1:5000/callback'
-SCOPE = 'user-library-read streaming user-read-playback-state user-modify-playback-state user-read-currently-playing'
+SCOPE = 'user-library-read user-library-modify streaming user-read-playback-state user-modify-playback-state user-read-currently-playing'
 
 # Cache cho từng người dùng
 caches_folder = './.spotify_caches/'
@@ -224,6 +224,12 @@ def recommend():
                 'uri': f"spotify:track:{track.get('id', '')}"
             })
     
+    # Thêm thông tin về lượt nghe cho tất cả các bài hát
+    for track in result_tracks:
+        track_id = track.get('id', '')
+        play_count = recommender.get_play_count(track_id)
+        track['play_count'] = int(play_count) if play_count is not None else 0
+    
     return jsonify({
         "status": "success",
         "recommendations": result_tracks
@@ -367,6 +373,12 @@ def recommend_emotion():
                 'uri': f"spotify:track:{track.get('id', '')}"
             })
     
+    # Thêm thông tin về lượt nghe cho tất cả các bài hát dựa trên cảm xúc
+    for track in result_tracks:
+        track_id = track.get('id', '')
+        play_count = recommender.get_play_count(track_id)
+        track['play_count'] = int(play_count) if play_count is not None else 0
+    
     return jsonify({
         "status": "success",
         "recommendations": result_tracks
@@ -480,6 +492,163 @@ def logout():
     # Xóa session
     session.clear()
     return redirect(url_for('login'))
+
+@app.route('/popular_tracks', methods=['POST'])
+def popular_tracks():
+    """API endpoint để lấy bài hát phổ biến từ dữ liệu triplets"""
+    data = request.json
+    num_recs = data.get('num_recommendations', 10)
+    offset = data.get('offset', 0)
+    
+    # Gọi phương thức mới từ recommender
+    rec_tracks = recommender.recommend_popular_tracks(num_recs, offset)
+    
+    # Lấy chi tiết về các bài hát được gợi ý
+    tracks_details = recommender.get_track_details(rec_tracks)
+    
+    # Tìm thêm thông tin từ Spotify API nếu đang đăng nhập
+    cache_handler = spotipy.cache_handler.CacheFileHandler(cache_path=session_cache_path())
+    auth_manager = SpotifyOAuth(
+        cache_handler=cache_handler,
+        client_id=SPOTIFY_CLIENT_ID,
+        client_secret=SPOTIFY_CLIENT_SECRET,
+        redirect_uri=SPOTIFY_REDIRECT_URI,
+        scope=SCOPE
+    )
+    
+    # Thêm thông tin để hiển thị trên giao diện
+    result_tracks = []
+    if auth_manager.validate_token(cache_handler.get_cached_token()):
+        spotify = spotipy.Spotify(auth_manager=auth_manager)
+        
+        # Nhóm các ID bài hát thành các nhóm nhỏ vì API giới hạn số lượng
+        track_ids = [t['id'] for t in tracks_details if 'id' in t]
+        
+        # Chia thành các nhóm 50 bài hát (giới hạn API của Spotify)
+        for i in range(0, len(track_ids), 50):
+            batch = track_ids[i:i+50]
+            
+            try:
+                spotify_tracks = spotify.tracks(batch)['tracks']
+                
+                for spotify_track in spotify_tracks:
+                    if spotify_track:
+                        # Lấy số lượt nghe thực tế
+                        play_count = recommender.get_play_count(spotify_track['id'])
+                        
+                        track_info = {
+                            'id': spotify_track['id'],
+                            'name': spotify_track['name'],
+                            'artist': spotify_track['artists'][0]['name'] if spotify_track['artists'] else 'Unknown',
+                            'album': spotify_track['album']['name'],
+                            'image': spotify_track['album']['images'][0]['url'] if spotify_track['album']['images'] else '',
+                            'uri': spotify_track['uri'],
+                            'play_count': int(play_count) if play_count is not None else 0
+                        }
+                        result_tracks.append(track_info)
+            except Exception as e:
+                print(f"Error fetching Spotify data: {e}")
+    
+    # Nếu không thể lấy dữ liệu từ Spotify hoặc không ở trạng thái đăng nhập, sử dụng dữ liệu cục bộ
+    if not result_tracks:
+        for track in tracks_details:
+            spotify_id = track.get('id', '')
+            play_count = recommender.get_play_count(spotify_id)
+                
+            result_tracks.append({
+                'id': spotify_id,
+                'name': track.get('name', 'Unknown Track'),
+                'artist': track.get('artists', 'Unknown Artist'),
+                'album': track.get('album_name', 'Unknown Album'),
+                'image': '/static/default-album.jpg',  # Hình mặc định
+                'uri': f"spotify:track:{spotify_id}",
+                'play_count': int(play_count) if play_count is not None else 0
+            })
+    
+    return jsonify({
+        "status": "success",
+        "recommendations": result_tracks
+    })
+
+@app.route('/save_track', methods=['POST'])
+def save_track():
+    """API endpoint để lưu bài hát vào thư viện Spotify của người dùng"""
+    cache_handler = spotipy.cache_handler.CacheFileHandler(cache_path=session_cache_path())
+    auth_manager = SpotifyOAuth(
+        cache_handler=cache_handler,
+        client_id=SPOTIFY_CLIENT_ID,
+        client_secret=SPOTIFY_CLIENT_SECRET,
+        redirect_uri=SPOTIFY_REDIRECT_URI,
+        scope=SCOPE + " user-library-modify"  # Thêm quyền truy cập để sửa đổi thư viện
+    )
+    
+    if not auth_manager.validate_token(cache_handler.get_cached_token()):
+        return jsonify({"status": "error", "message": "Bạn cần đăng nhập lại để thực hiện chức năng này"}), 401
+    
+    data = request.json
+    track_id = data.get('track_id')
+    
+    if not track_id:
+        return jsonify({"status": "error", "message": "Không có ID bài hát"}), 400
+    
+    try:
+        spotify = spotipy.Spotify(auth_manager=auth_manager)
+        
+        # Thêm bài hát vào thư viện của người dùng
+        spotify.current_user_saved_tracks_add(tracks=[track_id])
+        
+        return jsonify({
+            "status": "success",
+            "message": "Đã lưu bài hát vào thư viện của bạn"
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Lỗi khi lưu bài hát: {str(e)}"
+        }), 500
+
+@app.route('/get_user_library')
+def get_user_library():
+    """API endpoint để lấy danh sách bài hát đã lưu của người dùng"""
+    cache_handler = spotipy.cache_handler.CacheFileHandler(cache_path=session_cache_path())
+    auth_manager = SpotifyOAuth(
+        cache_handler=cache_handler,
+        client_id=SPOTIFY_CLIENT_ID,
+        client_secret=SPOTIFY_CLIENT_SECRET,
+        redirect_uri=SPOTIFY_REDIRECT_URI,
+        scope=SCOPE
+    )
+    
+    if not auth_manager.validate_token(cache_handler.get_cached_token()):
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+    
+    try:
+        spotify = spotipy.Spotify(auth_manager=auth_manager)
+        results = spotify.current_user_saved_tracks(limit=20)
+        tracks = results['items']
+        
+        formatted_tracks = []
+        for item in tracks:
+            track = item['track']
+            formatted_tracks.append({
+                'id': track['id'],
+                'name': track['name'],
+                'artist': track['artists'][0]['name'] if track['artists'] else 'Unknown',
+                'image': track['album']['images'][0]['url'] if track['album']['images'] else '/static/default-album.jpg',
+                'uri': track['uri'],
+                'added_at': item['added_at']  # Thêm thời gian được thêm vào
+            })
+        
+        return jsonify({
+            "status": "success",
+            "tracks": formatted_tracks
+        })
+    except Exception as e:
+        print(f"Error getting user library: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
