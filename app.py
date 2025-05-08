@@ -151,7 +151,13 @@ def recommend():
         if not track_id:
             return jsonify({"status": "error", "message": "No track ID provided"}), 400
         
-        rec_tracks = recommender.recommend_by_track_id(track_id, num_recs, offset)
+        # Bắt lỗi khi track_id không hợp lệ
+        try:
+            rec_tracks = recommender.recommend_by_track_id(track_id, num_recs, offset)
+        except Exception as e:
+            print(f"Lỗi khi đề xuất từ track_id {track_id}: {str(e)}")
+            # Nếu lỗi, trả về gợi ý ngẫu nhiên để tránh crash
+            rec_tracks = recommender.recommend_random(num_recs, offset)
     
     # Gợi ý dựa trên thể loại
     elif rec_type == 'genre':
@@ -649,6 +655,77 @@ def get_user_library():
             "status": "error",
             "message": str(e)
         }), 500
+
+@app.route('/recommend_spotify', methods=['POST'])
+def recommend_spotify():
+    """API endpoint để gợi ý bài hát dựa trên đặc trưng âm nhạc từ Spotify"""
+    cache_handler = spotipy.cache_handler.CacheFileHandler(cache_path=session_cache_path())
+    auth_manager = SpotifyOAuth(
+        cache_handler=cache_handler,
+        client_id=SPOTIFY_CLIENT_ID,
+        client_secret=SPOTIFY_CLIENT_SECRET,
+        redirect_uri=SPOTIFY_REDIRECT_URI,
+        scope=SCOPE
+    )
+    
+    if not auth_manager.validate_token(cache_handler.get_cached_token()):
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+    
+    data = request.json
+    track_id = data.get('track_id')
+    num_recs = data.get('num_recommendations', 5)
+    
+    if not track_id:
+        return jsonify({"status": "error", "message": "No track ID provided"}), 400
+    
+    try:
+        spotify = spotipy.Spotify(auth_manager=auth_manager)
+        
+        # Lấy đặc trưng âm nhạc của bài hát nguồn
+        track_features = spotify.audio_features(track_id)[0]
+        if not track_features:
+            return jsonify({"status": "error", "message": "Cannot get audio features"}), 404
+        
+        # Sử dụng API đề xuất của Spotify để lấy bài hát tương tự
+        recommendations = spotify.recommendations(
+            seed_tracks=[track_id],
+            limit=num_recs,
+            target_danceability=track_features.get('danceability'),
+            target_energy=track_features.get('energy'),
+            target_key=track_features.get('key'),
+            target_loudness=track_features.get('loudness'),
+            target_tempo=track_features.get('tempo'),
+            target_valence=track_features.get('valence'),
+            target_acousticness=track_features.get('acousticness'),
+            target_instrumentalness=track_features.get('instrumentalness'),
+            target_liveness=track_features.get('liveness'),
+            target_speechiness=track_features.get('speechiness')
+        )
+        
+        # Định dạng kết quả
+        result_tracks = []
+        for track in recommendations['tracks']:
+            # Lấy số lượt nghe từ dataset nếu có
+            play_count = recommender.get_play_count(track['id'])
+            
+            result_tracks.append({
+                'id': track['id'],
+                'name': track['name'],
+                'artist': track['artists'][0]['name'] if track['artists'] else 'Unknown',
+                'album': track['album']['name'],
+                'image': track['album']['images'][0]['url'] if track['album']['images'] else '',
+                'uri': track['uri'],
+                'play_count': int(play_count) if play_count is not None else 0
+            })
+        
+        return jsonify({
+            "status": "success",
+            "recommendations": result_tracks
+        })
+        
+    except Exception as e:
+        print(f"Error getting Spotify recommendations: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)

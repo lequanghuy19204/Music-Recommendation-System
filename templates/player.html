@@ -189,9 +189,17 @@
       let currentOffset = 0;
       let currentParams = {}; // Lưu trữ các tham số hiện tại
 
-      // Hàm gợi ý dựa trên bài hát
+      // Cải thiện hàm recommendSimilarTracks để xử lý lỗi tốt hơn
       function recommendSimilarTracks(trackId) {
+        if (!trackId) {
+          document.getElementById('recommendation-status').textContent = 'Không thể lấy gợi ý: Thiếu ID bài hát';
+          return;
+        }
+        
         document.getElementById('recommendation-status').textContent = 'Đang lấy gợi ý...';
+        
+        // Chuyển tab sang tab gợi ý thủ công để hiển thị kết quả
+        switchTab('manual-tab');
         
         // Lưu thông tin gợi ý hiện tại
         currentRecommendationType = 'track';
@@ -206,21 +214,29 @@
           body: JSON.stringify({
             type: "track",
             track_id: trackId,
-            num_recommendations: 5
+            num_recommendations: 5,
+            offset: 0
           }),
         })
-        .then(response => response.json())
+        .then(response => {
+          // Kiểm tra status code
+          if (!response.ok) {
+            throw new Error(`Server trả về lỗi: ${response.status}`);
+          }
+          return response.json();
+        })
         .then(data => {
           if (data.status === "success") {
             displayRecommendations(data.recommendations, 'Bài hát tương tự');
             document.getElementById('load-more-btn').style.display = 'inline-block';
             currentOffset = 5; // Cập nhật offset
           } else {
-            document.getElementById('recommendation-status').textContent = 'Không thể lấy gợi ý bài hát.';
+            document.getElementById('recommendation-status').textContent = 'Không thể lấy gợi ý bài hát: ' + (data.message || 'Không rõ lỗi');
             document.getElementById('load-more-btn').style.display = 'none';
           }
         })
         .catch(error => {
+          console.error("Lỗi khi lấy gợi ý:", error);
           document.getElementById('recommendation-status').textContent = 'Lỗi: ' + error.message;
           document.getElementById('load-more-btn').style.display = 'none';
         });
@@ -523,6 +539,7 @@
                   </div>
                   <div class="track-actions">
                     <button onclick="playTrack('${track.uri}')">Phát</button>
+                    <button onclick="recommendSimilarTracksSpotify('${track.id}')" class="similar-btn">Tương tự</button>
                   </div>
                 </div>
               `).join('');
@@ -1142,9 +1159,61 @@
         }
       }
 
+      // Thêm hàm mới để gọi API Spotify cho bài hát tương tự
+      function recommendSimilarTracksSpotify(trackId) {
+        if (!trackId) {
+          document.getElementById('recommendation-status').textContent = 'Không thể lấy gợi ý: Thiếu ID bài hát';
+          return;
+        }
+        
+        document.getElementById('recommendation-status').textContent = 'Đang lấy gợi ý từ Spotify...';
+        
+        // Chuyển tab sang tab gợi ý thủ công để hiển thị kết quả
+        switchTab('manual-tab');
+        
+        // Lưu thông tin gợi ý hiện tại
+        currentRecommendationType = 'track_spotify';
+        currentOffset = 0;
+        currentParams = { track_id: trackId };
+        
+        fetch("/recommend_spotify", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            track_id: trackId,
+            num_recommendations: 5
+          }),
+        })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`Server trả về lỗi: ${response.status}`);
+          }
+          return response.json();
+        })
+        .then(data => {
+          if (data.status === "success") {
+            displayRecommendations(data.recommendations, 'Bài hát tương tự (Spotify API)');
+            document.getElementById('load-more-btn').style.display = 'none'; // API này không hỗ trợ offset
+          } else {
+            document.getElementById('recommendation-status').textContent = 'Không thể lấy gợi ý bài hát: ' + (data.message || 'Không rõ lỗi');
+            document.getElementById('load-more-btn').style.display = 'none';
+          }
+        })
+        .catch(error => {
+          console.error("Lỗi khi lấy gợi ý:", error);
+          document.getElementById('recommendation-status').textContent = 'Lỗi: ' + error.message;
+          document.getElementById('load-more-btn').style.display = 'none';
+        });
+      }
+
       // Bắt đầu với tab gợi ý thủ công khi trang được tải
       document.addEventListener('DOMContentLoaded', function() {
         switchTab('manual-tab');
+        
+        // Tải danh sách bài hát của người dùng khi trang được tải
+        loadUserLibrary();
       });
     </script>
   </head>
@@ -1207,6 +1276,7 @@
                 </div>
                 <div class="track-actions">
                   <button onclick="playTrack('{{ track.track.uri }}')">Phát</button>
+                  <button onclick="recommendSimilarTracksSpotify('{{ track.track.id }}')" class="similar-btn">Tương tự</button>
                 </div>
               </div>
               {% endfor %}

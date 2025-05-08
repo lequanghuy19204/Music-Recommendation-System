@@ -8,3 +8,4 @@ tensorflow
 opencv-python
 deepface
 tf-keras
+seaborn

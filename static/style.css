@@ -80,9 +80,9 @@ h1, h2, h3 {
 }
 
 .track-actions {
-    margin-left: auto;
     display: flex;
-    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
 }
 
 .track-actions button {
@@ -745,4 +745,22 @@ h1, h2, h3 {
   padding: 20px;
   color: #777;
   font-style: italic;
+}
+
+/* Style cho nút tương tự */
+.similar-btn {
+  background-color: #5D67E4;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 15px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+  margin-left: 5px;
+}
+
+.similar-btn:hover {
+  background-color: #4A51C7;
+  transform: scale(1.05);
 }

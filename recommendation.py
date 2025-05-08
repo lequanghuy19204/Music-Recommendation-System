@@ -55,7 +55,7 @@ class MusicRecommender:
             print(f"Đã tải dữ liệu album: {len(self.albums_data)} bản ghi")
             
             # Lấy mẫu ngẫu nhiên từ dữ liệu để tránh tràn bộ nhớ
-            max_samples = 1000 # Giới hạn số lượng mẫu để tránh lỗi bộ nhớ
+            max_samples = 20000 # Giới hạn số lượng mẫu để tránh lỗi bộ nhớ
             
             if len(self.features_data) > max_samples:
                 print(f"Giảm kích thước dữ liệu xuống {max_samples} mẫu để tiết kiệm bộ nhớ")
@@ -179,47 +179,64 @@ class MusicRecommender:
     
     def recommend_by_track_id(self, track_id, n=5, offset=0):
         """Recommend songs similar to the given track ID using KNN model"""
-        if self.knn_model is None or self.track_indices is None:
+        if self.knn_model is None:
             print("Mô hình KNN không có sẵn, trả về gợi ý ngẫu nhiên")
             return self.recommend_random(n, offset)
         
-        # Check if track_id exists in our data
-        if track_id not in self.track_indices:
-            print(f"Không tìm thấy ID bài hát {track_id} trong tập dữ liệu")
+        try:
+            # Kiểm tra xem track_id có tồn tại trong dữ liệu
+            if not hasattr(self, 'track_indices'):
+                # Tạo track_indices nếu chưa có
+                self.track_indices = {}
+                self.track_ids = []
+                
+                if self.features_data is not None and not self.features_data.empty:
+                    for i, row in self.features_data.iterrows():
+                        track_id_val = row.get('id')
+                        if track_id_val:
+                            self.track_indices[track_id_val] = i
+                            self.track_ids.append(track_id_val)
+            
+            # Kiểm tra nếu track_id không tồn tại trong dữ liệu
+            if track_id not in self.track_indices:
+                print(f"Không tìm thấy ID bài hát {track_id} trong tập dữ liệu")
+                return self.recommend_random(n, offset)
+            
+            # Get the track index
+            idx = self.track_indices[track_id]
+            
+            # Get nearest neighbors
+            distances, indices = self.knn_model.kneighbors(
+                self.feature_vectors[idx].reshape(1, -1),
+                n_neighbors=n+offset+1  # +1 because the first one will be the input track itself
+            )
+            
+            # Skip the first result (the track itself) and apply offset
+            similar_indices = indices.flatten()[1+offset:1+offset+n]
+            
+            # Get the track IDs
+            recommended_track_ids = [self.track_ids[i] for i in similar_indices]
+            
+            # Thêm đoạn xử lý độ phổ biến vào cuối
+            if self.popularity_from_triplets:
+                # Tính điểm kết hợp giữa độ tương tự và độ phổ biến
+                track_scores = []
+                for rec_id in recommended_track_ids:
+                    # Lấy độ phổ biến kết hợp
+                    popularity = self.get_combined_popularity(rec_id)
+                    # Thêm vào danh sách điểm
+                    track_scores.append((rec_id, popularity))
+                
+                # Sắp xếp theo điểm giảm dần
+                track_scores.sort(key=lambda x: x[1], reverse=True)
+                
+                # Cập nhật danh sách kết quả
+                recommended_track_ids = [track_id for track_id, _ in track_scores]
+            
+            return recommended_track_ids
+        except Exception as e:
+            print(f"Lỗi trong recommend_by_track_id: {e}")
             return self.recommend_random(n, offset)
-        
-        # Get the track index
-        idx = self.track_indices[track_id]
-        
-        # Get nearest neighbors
-        distances, indices = self.knn_model.kneighbors(
-            self.feature_vectors[idx].reshape(1, -1),
-            n_neighbors=n+offset+1  # +1 because the first one will be the input track itself
-        )
-        
-        # Skip the first result (the track itself) and apply offset
-        similar_indices = indices.flatten()[1+offset:1+offset+n]
-        
-        # Get the track IDs
-        recommended_track_ids = [self.track_ids[i] for i in similar_indices]
-        
-        # Thêm đoạn xử lý độ phổ biến vào cuối
-        if self.popularity_from_triplets:
-            # Tính điểm kết hợp giữa độ tương tự và độ phổ biến
-            track_scores = []
-            for rec_id in recommended_track_ids:
-                # Lấy độ phổ biến kết hợp
-                popularity = self.get_combined_popularity(rec_id)
-                # Thêm vào danh sách điểm
-                track_scores.append((rec_id, popularity))
-            
-            # Sắp xếp theo điểm giảm dần
-            track_scores.sort(key=lambda x: x[1], reverse=True)
-            
-            # Cập nhật danh sách kết quả
-            recommended_track_ids = [track_id for track_id, _ in track_scores]
-        
-        return recommended_track_ids
     
     def recommend_by_genre(self, genre, n=5, offset=0):
         """Recommend songs from a specific genre"""
